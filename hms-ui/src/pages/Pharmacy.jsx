@@ -141,7 +141,7 @@ export default function Pharmacy() {
       </head>
       <body>
         <div class="clinic-name">Kassahun Medium Clinic</div>
-        <div class="clinic-sub">Shagat City, Kata</div>
+        <div class="clinic-sub">Shagar City, Oromia, Ethiopia</div>
         <hr class="divider" />
         <div class="title">Drug Requisition / Out-of-Stock Notice</div>
         <table>
@@ -163,7 +163,7 @@ export default function Pharmacy() {
             Approved By
           </div>
         </div>
-        <div class="footer">Kassahun Medium Clinic &mdash; Shagat City, Kata</div>
+        <div class="footer">Kassahun Medium Clinic &mdash; Shagar City, Oromia, Ethiopia</div>
       </body>
       </html>
     `)

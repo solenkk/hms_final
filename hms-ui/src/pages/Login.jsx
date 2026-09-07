@@ -36,7 +36,7 @@ export default function Login() {
             <Hospital size={30} color="#fff" />
           </div>
           <h1>Welcome Back</h1>
-          <p>Sign in to Father's Private Clinic HMS</p>
+          <p>Sign in to Kassahun Medium Clinic HMS</p>
         </div>
 
         <form className="login-form" onSubmit={submit}>
@@ -91,7 +91,7 @@ export default function Login() {
         </form>
 
         <div className="login-footer">
-          Father's Private Clinic · Addis Ababa, Ethiopia
+          Kassahun Medium Clinic · Shagar City, Oromia, Ethiopia
         </div>
       </div>
     </div>

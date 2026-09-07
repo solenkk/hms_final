@@ -69,8 +69,8 @@ export default function Sidebar() {
         </div>
         {!collapsed && (
           <div className="brand-text">
-            <div className="brand-name">Father's Clinic</div>
-            <div className="brand-sub">HMS v1.0</div>
+            <div className="brand-name">Kassahun Clinic</div>
+            <div className="brand-sub">Medium Clinic · Shagar</div>
           </div>
         )}
         <button

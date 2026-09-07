@@ -1,5 +1,7 @@
--- Hospital Management System Schema
--- Clinic: Father's private clinic, Addis Ababa, Ethiopia
+-- ============================================================
+-- HMS Database Schema (PostgreSQL DDL)
+-- Clinic: Kassahun Medium Clinic, Shagar City, Oromia, Ethiopia
+-- Currency: ETB (Ethiopian Birr)
 -- Stack: Python + FastAPI, PostgreSQL, React frontend, local Windows desktop server
 -- Language: English + Amharic (bilingual UI)
 -- Compliance: Ethiopia Proclamation 1321/2024 (UTF-8 encoded)

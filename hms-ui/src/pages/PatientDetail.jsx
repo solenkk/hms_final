@@ -1592,7 +1592,7 @@ function PatientPrescriptions({ patientId, patient }) {
       </style>
       </head><body>
         <div class="clinic-name">Kassahun Medium Clinic</div>
-        <div class="clinic-sub">Shagat City, Kata &nbsp;|&nbsp; Tel: ___________</div>
+        <div class="clinic-sub">Shagar City, Oromia, Ethiopia &nbsp;|&nbsp; Tel: +251 911 000000</div>
         <hr />
         <div style="display:flex;align-items:center">
           <div class="rx-symbol">&#8478;</div>
@@ -1618,7 +1618,7 @@ function PatientPrescriptions({ patientId, patient }) {
         </div>
         <div class="footer">
           This prescription is valid for 30 days from the date of issue.<br/>
-          Kassahun Medium Clinic &mdash; Shagat City, Kata
+          Kassahun Medium Clinic &mdash; Shagar City, Oromia, Ethiopia
         </div>
       </body></html>
     `)
@@ -1999,7 +1999,7 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
         @media print { body { padding: 10px; } }
       </style></head><body>
         <div class="clinic-name">Kassahun Medium Clinic</div>
-        <div class="clinic-sub">Shagat City, Kata &nbsp;|&nbsp; Tel: ___________</div>
+        <div class="clinic-sub">Shagar City, Oromia, Ethiopia &nbsp;|&nbsp; Tel: +251 911 000000</div>
         <hr />
         <div style="display:flex;align-items:center">
           <div class="rx-symbol">&#8478;</div>
@@ -2019,7 +2019,7 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
           <div class="sig-box"><div class="sig-line"></div>Doctor Signature &amp; Stamp</div>
           <div class="sig-box"><div class="sig-line"></div>Patient / Guardian</div>
         </div>
-        <div class="footer">Kassahun Medium Clinic &mdash; Shagat City, Kata &mdash; Valid 30 days</div>
+        <div class="footer">Kassahun Medium Clinic &mdash; Shagar City, Oromia, Ethiopia &mdash; Valid 30 days</div>
       </body></html>
     `)
     win.document.close()
