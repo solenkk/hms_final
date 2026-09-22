@@ -3,7 +3,6 @@ import { labApi, adminApi, visitsApi, apiError } from '../api'
 import { FlaskConical, Plus, Pencil, Trash2, Check } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
-import IndicatorRulesEditor from '../components/IndicatorRulesEditor'
 
 export default function Lab() {
   const [orders, setOrders] = useState([])
@@ -284,19 +283,6 @@ function TestTypeModal({ testType, onClose, onSaved }) {
       normal_range_text: p.normal_range_text ?? '',
     }))
   )
-  
-  // Reportable Indicator Setup inline state
-  const [isReportable, setIsReportable] = useState(Boolean(existingInd?.enabled ?? false))
-  const [reportableLabel, setReportableLabel] = useState(existingInd?.label || testType?.name_en || '')
-  const [reportableSection, setReportableSection] = useState(existingInd?.section || 'Lab Testing')
-  const [outcomeShape, setOutcomeShape] = useState(existingInd?.outcome_shape || 'buttons')
-  const [minAge, setMinAge] = useState(existingInd?.min_age ?? '')
-  const [maxAge, setMaxAge] = useState(existingInd?.max_age ?? '')
-  const [options, setOptions] = useState(existingInd?.options?.length ? existingInd.options : [
-    { option_label: 'Reactive', option_value: 'positive', report_event_code: 'hiv_test_positive', sort_order: 0 },
-    { option_label: 'Non-Reactive', option_value: 'negative', report_event_code: 'hiv_test_negative', sort_order: 1 }
-  ])
-  const [thresholds, setThresholds] = useState(existingInd?.thresholds || [])
   const [saving, setSaving] = useState(false)
 
   const handle = e => {
@@ -332,20 +318,6 @@ function TestTypeModal({ testType, onClose, onSaved }) {
         normal_range_text: p.normal_range_text || null,
         sort_order: index,
       })),
-      reportable_setup: isReportable ? {
-        enabled: true,
-        label: (reportableLabel.trim() || form.name_en.trim()),
-        section: (reportableSection.trim() || 'Lab Testing'),
-        outcome_shape: outcomeShape,
-        min_age: minAge === '' ? null : Number(minAge),
-        max_age: maxAge === '' ? null : Number(maxAge),
-        options: outcomeShape === 'buttons' ? options : [],
-        thresholds: outcomeShape === 'threshold' ? thresholds.map(t => ({
-          ...t,
-          min_value: t.min_value === '' ? null : Number(t.min_value),
-          max_value: t.max_value === '' ? null : Number(t.max_value)
-        })) : []
-      } : { enabled: false, label: form.name_en.trim(), section: 'Lab Testing', outcome_shape: 'buttons', options: [], thresholds: [] }
     }
     try {
       const res = isEdit
@@ -443,63 +415,6 @@ function TestTypeModal({ testType, onClose, onSaved }) {
                     </button>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-
-          {/* Inline Reportable Indicator Setup Toggle & Section */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>
-              <input 
-                type="checkbox" 
-                checked={isReportable} 
-                onChange={e => {
-                  const val = e.target.checked
-                  setIsReportable(val)
-                  if (val && !reportableLabel) setReportableLabel(form.name_en)
-                }} 
-              />
-              Reportable to Government Report (HMIS / PHEM)?
-            </label>
-
-            {isReportable && (
-              <div style={{ marginTop: '1rem' }}>
-                <div className="form-grid" style={{ marginBottom: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Indicator Label (on form) *</label>
-                    <input 
-                      className="form-input" 
-                      value={reportableLabel} 
-                      onChange={e => setReportableLabel(e.target.value)} 
-                      required={isReportable}
-                      placeholder="e.g. HIV 1/2 Rapid Test" 
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Government Form Section *</label>
-                    <input 
-                      className="form-input" 
-                      value={reportableSection} 
-                      onChange={e => setReportableSection(e.target.value)} 
-                      required={isReportable}
-                      placeholder="e.g. HIV Testing" 
-                    />
-                  </div>
-                </div>
-
-                <IndicatorRulesEditor
-                  outcomeShape={outcomeShape}
-                  setOutcomeShape={setOutcomeShape}
-                  options={options}
-                  setOptions={setOptions}
-                  thresholds={thresholds}
-                  setThresholds={setThresholds}
-                  minAge={minAge}
-                  setMinAge={setMinAge}
-                  maxAge={maxAge}
-                  setMaxAge={setMaxAge}
-                />
               </div>
             )}
           </div>

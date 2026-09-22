@@ -318,8 +318,10 @@ export default function Pharmacy() {
                     </tr>
                   </thead>
                   <tbody>
-                    {prescriptions.map(p => (
-                      <>
+                    {prescriptions.filter(p => p.items?.some(i => i.fulfillment_source === 'CLINIC_PHARMACY' || !i.fulfillment_source)).map(p => {
+                      const clinicItems = p.items.filter(i => i.fulfillment_source === 'CLINIC_PHARMACY' || !i.fulfillment_source);
+                      return (
+                      <React.Fragment key={p.id}>
                         <tr
                           key={p.id}
                           style={{ cursor: 'pointer', background: expandedPresc === p.id ? 'var(--bg-secondary)' : '' }}
@@ -347,14 +349,14 @@ export default function Pharmacy() {
                           <td style={{fontSize:'0.82rem', maxWidth:'180px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                             {p.notes || <span className="emr-muted">—</span>}
                           </td>
-                          <td style={{fontSize:'0.82rem'}}>{p.items?.length || 0} drugs</td>
+                          <td style={{fontSize:'0.82rem'}}>{clinicItems.length} drugs</td>
                           <td>
                             <button className="btn btn-ghost btn-xs">
                               {expandedPresc === p.id ? 'Hide Details' : 'View / Dispense'}
                             </button>
                           </td>
                         </tr>
-                        {expandedPresc === p.id && p.items?.length > 0 && (
+                        {expandedPresc === p.id && clinicItems.length > 0 && (
                           <tr key={`${p.id}-details`} style={{ background: 'var(--bg-secondary)' }}>
                             <td colSpan={7} style={{ padding: '1rem 1.5rem' }}>
                               <div style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
@@ -372,7 +374,7 @@ export default function Pharmacy() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {p.items.map((item) => {
+                                  {clinicItems.map((item) => {
                                     const remaining = item.quantity - item.dispensed_quantity;
                                     const val = dispenseForm[item.id] !== undefined ? dispenseForm[item.id] : remaining;
                                     return (
@@ -393,7 +395,7 @@ export default function Pharmacy() {
                                           {item.dispensed_quantity}
                                         </td>
                                         <td style={{ fontSize: '0.82rem' }}>
-                                          {item.drug_form?.toLowerCase() === 'injection' ? (
+                                          {item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection ? (
                                             <span className="badge badge-purple" style={{ fontSize: '0.75rem' }}>Injection Tracker</span>
                                           ) : item.dispenser_name ? (
                                             <div style={{ color: 'var(--success)', fontWeight: 500 }}>
@@ -405,10 +407,10 @@ export default function Pharmacy() {
                                             <span className="emr-muted">Not dispensed yet</span>
                                           )}
                                         </td>
-                                        <td onClick={e => e.stopPropagation()} style={{ minWidth: item.drug_form?.toLowerCase() === 'injection' ? '250px' : '160px' }}>
+                                        <td onClick={e => e.stopPropagation()} style={{ minWidth: item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection ? '250px' : '160px' }}>
                                           {p.status === 'cancelled' ? (
                                             <span className="badge badge-red" style={{ fontSize: '0.73rem' }}>Cancelled — do not dispense</span>
-                                          ) : item.drug_form?.toLowerCase() === 'injection' ? (
+                                          ) : item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection ? (
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.2rem 0' }}>
                                               {/* Completed logs */}
                                               {item.injection_logs && item.injection_logs.map(log => (
@@ -500,8 +502,8 @@ export default function Pharmacy() {
                             </td>
                           </tr>
                         )}
-                      </>
-                    ))}
+                      </React.Fragment>
+                    )})}
                   </tbody>
                 </table>
               </div>
@@ -634,7 +636,7 @@ function DrugFormModal({ drug, onClose, onSaved }) {
               <label className="form-label">Storage Conditions</label>
               <input className="form-input" name="storage_conditions" value={form.storage_conditions} onChange={handle} placeholder="e.g. 2–8°C" />
             </div>
-          </div>
+            </div>
 
           <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.88rem' }}>

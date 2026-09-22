@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { patientsApi, visitsApi, emrApi, labApi, billingApi, pharmacyApi, apiError } from '../api'
-import { ArrowLeft, Stethoscope, FlaskConical, ReceiptText, FileText, Plus, CheckCircle, Check, Printer, User, Beaker, Pill, CreditCard, Syringe, XCircle, Edit3, Clock } from 'lucide-react'
+import { patientsApi, visitsApi, emrApi, labApi, billingApi, pharmacyApi, bedsApi, apiError } from '../api'
+import { ArrowLeft, Stethoscope, FlaskConical, ReceiptText, FileText, Plus, CheckCircle, Check, Printer, User, Beaker, Pill, CreditCard, Syringe, XCircle, Edit3, Clock, BedDouble } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { CancelInvoiceModal } from './Billing'
+import GovernmentReporting from './GovernmentReporting'
 import toast from 'react-hot-toast'
 import './PatientDetail.css'
 
@@ -15,6 +16,9 @@ export default function PatientDetail() {
   const [visits, setVisits] = useState([])
   const [tab, setTab] = useState('visits')
   const [loading, setLoading] = useState(true)
+
+  const [showCloseModal, setShowCloseModal] = useState(null)
+  const [confirmReporting, setConfirmReporting] = useState(false)
 
   const loadPatient = () => {
     Promise.all([
@@ -35,6 +39,24 @@ export default function PatientDetail() {
   if (!patient) return <div className="page-body"><div className="empty-state">Patient not found</div></div>
 
   const age = patient.date_of_birth ? Math.floor((Date.now() - new Date(patient.date_of_birth)) / (365.25 * 24 * 3600 * 1000)) : null
+
+  const activeVisits = visits.filter(v => v.status === 'open')
+  const myRole = user?.role?.name ?? user?.role
+  const canCloseVisit = ['doctor', 'admin'].includes(myRole)
+  const canViewBilling = ['receptionist', 'admin'].includes(myRole)
+
+  const handleCloseVisit = async () => {
+    if (!showCloseModal) return
+    try {
+      await visitsApi.close(showCloseModal, { confirm_reporting: true })
+      toast.success('Visit closed successfully')
+      setShowCloseModal(null)
+      setConfirmReporting(false)
+      loadPatient()
+    } catch (err) {
+      toast.error(apiError(err, 'Failed to close visit'))
+    }
+  }
 
   return (
     <div className="page-body">
@@ -131,11 +153,20 @@ export default function PatientDetail() {
             <MetaItem label="Consent" value={patient.consent_given ? '✓ Given' : '✗ Not Given'} />
           </div>
         </div>
-        <div className="patient-status-col">
+        <div className="patient-status-col" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.75rem' }}>
           {patient.is_active
             ? <span className="badge badge-green">Active</span>
             : <span className="badge badge-gray">Inactive</span>
           }
+          {activeVisits.length > 0 && canCloseVisit && (
+            <button 
+              className="btn btn-ghost btn-sm" 
+              style={{ color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+              onClick={() => setShowCloseModal(activeVisits[0].id)}
+            >
+              <XCircle size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Close Active Visit{activeVisits.length > 1 ? 's...' : ''}
+            </button>
+          )}
         </div>
       </div>
 
@@ -153,20 +184,76 @@ export default function PatientDetail() {
         <button className={`tab-btn ${tab==='prescriptions'?'active':''}`} onClick={() => setTab('prescriptions')}>
           <Pill size={14} style={{ marginRight:4 }} />Prescriptions
         </button>
-        <button className={`tab-btn ${tab==='billing'?'active':''}`} onClick={() => setTab('billing')}>
-          <ReceiptText size={14} style={{ marginRight:4 }} />Billing
-        </button>
+        {canViewBilling && (
+          <button className={`tab-btn ${tab==='billing'?'active':''}`} onClick={() => setTab('billing')}>
+            <ReceiptText size={14} style={{ marginRight:4 }} />Billing
+          </button>
+        )}
         <button className={`tab-btn ${tab==='injections'?'active':''}`} onClick={() => setTab('injections')}>
           <Syringe size={14} style={{ marginRight:4 }} />Injections (INJ)
+        </button>
+        <button className={`tab-btn ${tab==='beds'?'active':''}`} onClick={() => setTab('beds')}>
+          <BedDouble size={14} style={{ marginRight:4 }} />Beds
+        </button>
+        <button className={`tab-btn ${tab==='hmis'?'active':''}`} onClick={() => setTab('hmis')}>
+          <FileText size={14} style={{ marginRight:4 }} />Monthly HMIS
+        </button>
+        <button className={`tab-btn ${tab==='phem'?'active':''}`} onClick={() => setTab('phem')}>
+          <FileText size={14} style={{ marginRight:4 }} />Weekly PHEM
         </button>
       </div>
 
       {tab === 'visits' && <PatientVisits visits={visits} patientId={id} onRefresh={loadPatient} />}
       {tab === 'emr'    && <PatientEMR patientId={id} />}
-      {tab === 'lab'    && <PatientLab patientId={id} />}
+      {tab === 'lab'    && <PatientLab patientId={id} patient={patient} />}
       {tab === 'prescriptions' && <PatientPrescriptions patientId={id} patient={patient} />}
-      {tab === 'billing' && <PatientBilling patientId={id} onPaymentCompleted={loadPatient} />}
+      {tab === 'billing' && canViewBilling && <PatientBilling patientId={id} onPaymentCompleted={loadPatient} />}
+      {tab === 'beds' && <PatientBeds patientId={id} patient={patient} onRefresh={loadPatient} />}
       {tab === 'injections' && <PatientInjections patientId={id} patient={patient} />}
+      {tab === 'hmis' && <GovernmentReporting patientId={id} patient={patient} visits={visits} reportType="HMIS" />}
+      {tab === 'phem' && <GovernmentReporting patientId={id} patient={patient} visits={visits} reportType="PHEM" />}
+
+      {showCloseModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowCloseModal(null)}>
+          <div className="modal-content" style={{ maxWidth: 500 }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Close Active Visit</h3>
+            {activeVisits.length > 1 && (
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label">Select Visit to Close</label>
+                <select className="form-select" value={showCloseModal} onChange={e => setShowCloseModal(e.target.value)}>
+                  {activeVisits.map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.visit_number} - {v.doctor_name ? `Dr. ${v.doctor_name}` : 'Unknown Doctor'} - {v.visit_type} {v.chief_complaint_en ? `(${v.chief_complaint_en})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div style={{
+              background: 'hsla(38,95%,55%,0.15)',
+              border: '1px solid hsla(38,95%,55%,0.3)',
+              color: 'hsl(38,95%,30%)',
+              padding: '1rem',
+              borderRadius: 'var(--border-radius)',
+              marginBottom: '1.5rem',
+              fontSize: '0.9rem'
+            }}>
+              <strong>⚠️ Government Reporting Reminder</strong>
+              <p style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+                Please ensure that all applicable government reporting events (e.g. malaria tests, family planning methods, malnutrition screenings) have been entered into the patient's record before closing this visit.
+              </p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button className="btn btn-ghost" onClick={() => { setShowCloseModal(null); setConfirmReporting(false) }}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleCloseVisit}>
+                Close Visit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -209,12 +296,16 @@ function PatientVisits({ visits, patientId, onRefresh }) {
   const { user: me } = useAuth()
   const myRole = me?.role?.name ?? me?.role
   const canCloseVisit = ['doctor', 'admin'].includes(myRole)
+  const [showCloseModal, setShowCloseModal] = useState(null) // visitId
+  const [confirmReporting, setConfirmReporting] = useState(false)
 
-  const handleCloseVisit = async (visitId) => {
-    if (!window.confirm('Are you sure you want to close this visit?')) return
+  const handleCloseVisit = async () => {
+    if (!showCloseModal) return
     try {
-      await visitsApi.close(visitId)
+      await visitsApi.close(showCloseModal, { confirm_reporting: true })
       toast.success('Visit closed successfully')
+      setShowCloseModal(null)
+      setConfirmReporting(false)
       if (onRefresh) onRefresh()
     } catch (err) {
       toast.error(apiError(err, 'Failed to close visit'))
@@ -235,6 +326,7 @@ function PatientVisits({ visits, patientId, onRefresh }) {
               <th>Visit #</th>
               <th>Type</th>
               <th>Complaint</th>
+              <th>Doctor</th>
               <th>Status</th>
               <th>Date</th>
               {canCloseVisit && <th>Actions</th>}
@@ -246,6 +338,7 @@ function PatientVisits({ visits, patientId, onRefresh }) {
                 <td><span className="mono patient-num">{v.visit_number}</span></td>
                 <td><span className="badge badge-blue">{v.visit_type}</span></td>
                 <td>{v.chief_complaint_en || '—'}</td>
+                <td>{v.doctor_name ? `Dr. ${v.doctor_name}` : '—'}</td>
                 <td><span className={`badge ${v.status==='open'?'badge-green':'badge-gray'}`}>{v.status}</span></td>
                 <td style={{fontSize:'0.8rem',color:'var(--text-muted)'}}>{new Date(v.created_at).toLocaleDateString()}</td>
                 {canCloseVisit && (
@@ -254,7 +347,7 @@ function PatientVisits({ visits, patientId, onRefresh }) {
                       <button
                         className="btn btn-ghost btn-xs"
                         style={{ color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
-                        onClick={() => handleCloseVisit(v.id)}
+                        onClick={() => setShowCloseModal(v.id)}
                       >
                         <XCircle size={12} style={{ marginRight: 3, verticalAlign: 'middle' }} /> Close Visit
                       </button>
@@ -268,6 +361,36 @@ function PatientVisits({ visits, patientId, onRefresh }) {
           </tbody>
         </table>
       </div>
+
+      {showCloseModal && (
+        <div className="modal-backdrop">
+          <div className="modal-content" style={{ maxWidth: 500 }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Close Visit</h3>
+            <div style={{
+              background: 'hsla(38,95%,55%,0.15)',
+              border: '1px solid hsla(38,95%,55%,0.3)',
+              color: 'hsl(38,95%,30%)',
+              padding: '1rem',
+              borderRadius: 'var(--border-radius)',
+              marginBottom: '1.5rem',
+              fontSize: '0.9rem'
+            }}>
+              <strong>⚠️ Government Reporting Reminder</strong>
+              <p style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+                Please ensure that all applicable government reporting events (e.g. malaria tests, family planning methods, malnutrition screenings) have been entered into the patient's record before closing this visit.
+              </p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button className="btn btn-ghost" onClick={() => { setShowCloseModal(null); setConfirmReporting(false) }}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleCloseVisit}>
+                Close Visit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -674,7 +797,7 @@ function EMRIndicatorPanel({ patientId }) {
 }
 
 
-function PatientLab({ patientId }) {
+function PatientLab({ patientId, patient }) {
   const { user: me } = useAuth()
   const myRole = me?.role?.name ?? me?.role
   const canOrder  = ['doctor', 'admin'].includes(myRole)
@@ -684,6 +807,7 @@ function PatientLab({ patientId }) {
   const [loading, setLoading] = useState(true)
   const [showOrderModal, setShowOrderModal] = useState(false)
   const [expanded, setExpanded] = useState(null) // row id expanded for results
+  const [selectedLabs, setSelectedLabs] = useState([])
 
   const load = () => {
     setLoading(true)
@@ -732,6 +856,64 @@ function PatientLab({ patientId }) {
 
   if (loading) return <div className="loading-center"><div className="spinner" /></div>
 
+  const printLabs = () => {
+    if (selectedLabs.length === 0) return
+    const win = window.open('', '_blank', 'width=800,height=600')
+    const printDate = new Date().toLocaleString()
+    
+    const labsToPrint = history.filter(h => selectedLabs.includes(h.id))
+    
+    let html = `
+      <!DOCTYPE html><html><head><title>Lab Results</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 28px; color: #111; font-size: 13px; }
+        .clinic-name { font-size: 19px; font-weight: 700; text-align: center; margin-bottom: 2px; }
+        .clinic-sub  { font-size: 12px; color: #555; text-align: center; margin-bottom: 2px; }
+        .title    { font-size: 14px; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 1px; margin: 12px 0; }
+        hr           { border: none; border-top: 1.5px solid #333; margin: 10px 0; }
+        .info-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; margin-bottom: 14px; }
+        .info-row    { font-size: 12px; } .info-row span { font-weight: 600; }
+        table        { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; }
+        th           { background: #eee; text-align: left; padding: 5px 6px; font-size: 11px; border-bottom: 1px solid #ccc; }
+        td           { padding: 5px 6px; font-size: 12px; border-bottom: 1px dotted #ddd; vertical-align: top; }
+        .test-title  { font-size: 14px; font-weight: 700; margin-top: 25px; color: #000; }
+        .footer      { margin-top: 30px; font-size: 10px; color: #888; text-align: center; }
+        @media print { body { padding: 10px; } }
+      </style></head><body>
+        <div class="clinic-name">Kassahun Medium Clinic</div>
+        <div class="clinic-sub">Shagar City, Oromia, Ethiopia &nbsp;|&nbsp; Tel: +251 911813466</div>
+        <hr />
+        <div class="title">LABORATORY RESULTS</div>
+        <div class="info-grid">
+          <div class="info-row"><span>Date Printed:</span> ${printDate}</div>
+          <div class="info-row"><span>Patient:</span> ${patient ? `${patient.first_name_en} ${patient.last_name_en}` : '___________'}</div>
+          <div class="info-row"><span>MRN:</span> ${patient?.patient_number || '___________'}</div>
+        </div>
+        <hr />
+    `
+    
+    labsToPrint.forEach(lab => {
+      html += `<div class="test-title">${lab.test_name} (Order #${lab.order_number})</div>`
+      html += `<table><thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Normal Range</th><th>Flag</th></tr></thead><tbody>`
+      if (lab.results) {
+        lab.results.forEach(r => {
+          const flag = r.is_abnormal ? '<strong style="color:red">*ABNORMAL*</strong>' : ''
+          html += `<tr><td>${r.parameter}</td><td><strong>${r.value || '—'}</strong></td><td>${r.unit || '—'}</td><td>${r.normal_range_text || '—'}</td><td>${flag}</td></tr>`
+        })
+      }
+      html += `</tbody></table>`
+      html += `<div style="font-size: 11px; color: #555; margin-bottom: 20px;">Technician: ${lab.technician_name || '—'} | Verified By: ${lab.approved_by_name || '—'}</div>`
+    })
+
+    html += `<div class="footer">Kassahun Medium Clinic &mdash; Shagar City, Oromia, Ethiopia</div></body></html>`
+    
+    win.document.write(html)
+    win.document.close()
+    win.setTimeout(() => {
+      win.print()
+    }, 250)
+  }
+
   return (
     <>
       {/* Header row with Order Lab button */}
@@ -740,11 +922,18 @@ function PatientLab({ patientId }) {
           <FlaskConical size={16} style={{ marginRight:6, verticalAlign:'middle' }} />
           Lab History
         </h4>
-        {canOrder && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowOrderModal(true)}>
-            <Plus size={14} /> Order Lab
-          </button>
-        )}
+        <div style={{ display:'flex', gap:'0.5rem' }}>
+          {selectedLabs.length > 0 && (
+            <button className="btn btn-primary btn-sm" onClick={printLabs}>
+              <Printer size={14} style={{ marginRight:4 }} /> Print Selected ({selectedLabs.length})
+            </button>
+          )}
+          {canOrder && (
+            <button className="btn btn-primary btn-sm" onClick={() => setShowOrderModal(true)}>
+              <Plus size={14} style={{ marginRight:4 }} /> Order Lab
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">
@@ -763,6 +952,7 @@ function PatientLab({ patientId }) {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 30 }}></th>
                   <th>Order #</th>
                   <th>Test</th>
                   <th>Priority</th>
@@ -776,12 +966,23 @@ function PatientLab({ patientId }) {
               </thead>
               <tbody>
                 {history.map(row => (
-                  <>
+                  <React.Fragment key={row.id}>
                     <tr
-                      key={row.id}
                       style={{ cursor: row.results?.length > 0 ? 'pointer' : 'default', background: expanded === row.id ? 'var(--bg-secondary)' : '' }}
                       onClick={() => row.results?.length > 0 && setExpanded(expanded === row.id ? null : row.id)}
                     >
+                      <td onClick={e => e.stopPropagation()}>
+                        {row.results?.length > 0 && (
+                          <input 
+                            type="checkbox" 
+                            checked={selectedLabs.includes(row.id)}
+                            onChange={e => {
+                              if (e.target.checked) setSelectedLabs(prev => [...prev, row.id])
+                              else setSelectedLabs(prev => prev.filter(id => id !== row.id))
+                            }}
+                          />
+                        )}
+                      </td>
                       <td><span className="mono patient-num">{row.order_number}</span></td>
                       <td style={{fontWeight:500}}>{row.test_name || '—'}</td>
                       <td>
@@ -842,7 +1043,7 @@ function PatientLab({ patientId }) {
                     {/* Expandable results row */}
                     {expanded === row.id && row.results?.length > 0 && (
                       <tr key={`${row.id}-results`} style={{background:'var(--bg-secondary)'}}>
-                        <td colSpan={9} style={{padding:'1rem 1.5rem'}}>
+                        <td colSpan={10} style={{padding:'1rem 1.5rem'}}>
                           <div style={{fontWeight:600, fontSize:'0.82rem', marginBottom:'0.5rem', color:'var(--text-muted)'}}>
                             Test Results for {row.test_name}
                           </div>
@@ -878,7 +1079,7 @@ function PatientLab({ patientId }) {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -1762,7 +1963,7 @@ function PatientPrescriptions({ patientId, patient }) {
                                     {!item.instructions_en && !item.instructions_am && <span className="emr-muted">—</span>}
                                   </td>
                                   <td style={{fontSize:'0.82rem'}}>
-                                    {item.drug_form?.toLowerCase() === 'injection' ? (
+                                    {item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection ? (
                                       <span className="badge badge-purple" style={{ fontSize: '0.75rem' }}>Injection Tracker</span>
                                     ) : item.dispenser_name ? (
                                       <span style={{color:'var(--success)', fontWeight:500}}>
@@ -1774,10 +1975,10 @@ function PatientPrescriptions({ patientId, patient }) {
                                       <span className="emr-muted">—</span>
                                     )}
                                   </td>
-                                  <td onClick={e => e.stopPropagation()} style={{minWidth: item.drug_form?.toLowerCase() === 'injection' ? '250px' : '160px'}}>
+                                  <td onClick={e => e.stopPropagation()} style={{minWidth: item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection ? '250px' : '160px'}}>
                                     {p.status === 'cancelled' ? (
                                       <span className="badge badge-red" style={{fontSize:'0.73rem'}}>Cancelled — do not dispense</span>
-                                    ) : item.drug_form?.toLowerCase() === 'injection' ? (
+                                    ) : item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.2rem 0' }}>
                                         {/* Completed logs */}
                                         {item.injection_logs && item.injection_logs.map(log => (
@@ -1870,6 +2071,7 @@ function PatientPrescriptions({ patientId, patient }) {
       {showOrderModal && (
         <NewPrescriptionModal
           patientId={patientId}
+          patient={patient}
           onClose={() => setShowOrderModal(false)}
           onSaved={() => { setShowOrderModal(false); load() }}
         />
@@ -1878,12 +2080,12 @@ function PatientPrescriptions({ patientId, patient }) {
   )
 }
 
-function NewPrescriptionModal({ patientId, onClose, onSaved }) {
+function NewPrescriptionModal({ patientId, patient, onClose, onSaved }) {
   const [visits, setVisits] = useState([])
   const [drugs, setDrugs] = useState([])
   const [form, setForm] = useState({ visit_id: '', notes: '' })
   const [items, setItems] = useState([
-    { drug_id: '', dose: '', frequency: 'Once daily', duration: '', quantity: 1, instructions_en: '', instructions_am: '' }
+    { fulfillment_source: 'CLINIC_PHARMACY', drug_id: '', external_drug_name: '', is_external_injection: false, dose: '', frequency: 'Once daily', duration: '', quantity: 1, instructions_en: '', instructions_am: '' }
   ])
   const [saving, setSaving] = useState(false)
   const [savedRx, setSavedRx] = useState(null)       // holds saved prescription data for print step
@@ -1904,7 +2106,7 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
   }, [patientId])
 
   const addItem = () => {
-    setItems(prev => [...prev, { drug_id: '', dose: '', frequency: 'Once daily', duration: '', quantity: 1, instructions_en: '', instructions_am: '' }])
+    setItems(prev => [...prev, { fulfillment_source: 'CLINIC_PHARMACY', drug_id: '', external_drug_name: '', is_external_injection: false, dose: '', frequency: 'Once daily', duration: '', quantity: 1, instructions_en: '', instructions_am: '' }])
   }
 
   const removeItem = (idx) => {
@@ -1920,15 +2122,23 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
     if (!form.visit_id) return toast.error('Please select an open visit')
 
     // Validate items
-    const invalidItem = items.some(it => !it.drug_id || !it.dose || !it.frequency || !it.duration || it.quantity < 1)
+    const invalidItem = items.some(it => {
+      if (it.fulfillment_source === 'CLINIC_PHARMACY' && !it.drug_id) return true;
+      if (it.fulfillment_source === 'EXTERNAL_PHARMACY' && !it.external_drug_name) return true;
+      if (!it.dose || !it.frequency || !it.duration || it.quantity < 1) return true;
+      return false;
+    })
     if (invalidItem) return toast.error('Please fill all drug item details correctly')
 
     setSaving(true)
     try {
-      await pharmacyApi.prescribe({
+      const res = await pharmacyApi.prescribe({
         visit_id: form.visit_id,
         items: items.map(it => ({
-          drug_id: parseInt(it.drug_id),
+          fulfillment_source: it.fulfillment_source,
+          drug_id: it.fulfillment_source === 'CLINIC_PHARMACY' ? parseInt(it.drug_id) : undefined,
+          external_drug_name: it.fulfillment_source === 'EXTERNAL_PHARMACY' ? it.external_drug_name : undefined,
+          is_external_injection: it.fulfillment_source === 'EXTERNAL_PHARMACY' ? it.is_external_injection : false,
           dose: it.dose,
           frequency: it.frequency,
           duration: it.duration,
@@ -1939,20 +2149,15 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
         notes: form.notes || undefined,
       })
 
-      // Check if any item was out of stock
-      const oos = items.filter(it => {
-        const d = drugs.find(dr => String(dr.id) === String(it.drug_id))
-        return d && d.current_stock <= 0
-      }).map(it => {
-        const d = drugs.find(dr => String(dr.id) === String(it.drug_id))
-        return { ...it, drug_name: d?.name_generic_en, drug_form: d?.drug_form, strength: d?.strength }
-      })
+      const prescriptionData = res.data;
 
-      if (oos.length > 0) {
-        // Some drugs are out of stock — go to print-and-confirm step
-        setOutOfStockItems(oos)
-        setSavedRx({ visit_id: form.visit_id, notes: form.notes, items: oos })
-        toast.success('Prescription saved. Please print for patient.')
+      // Check if there are external items to print
+      const externalItems = prescriptionData.items.filter(it => it.fulfillment_source === 'EXTERNAL_PHARMACY')
+
+      if (externalItems.length > 0) {
+        setOutOfStockItems(externalItems) // repurpose this state
+        setSavedRx(prescriptionData)
+        toast.success('Prescription saved. Please print external prescription.')
       } else {
         toast.success('Prescription created successfully')
         onSaved()
@@ -1962,24 +2167,26 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
     } finally { setSaving(false) }
   }
 
-  const printOutOfStockSlip = (patientData) => {
-    const win = window.open('', '_blank', 'width=540,height=680')
-    const rxDate = new Date().toLocaleDateString()
-    const rxTime = new Date().toLocaleTimeString()
+  const printExternalPrescription = () => {
+    if (!savedRx) return
+    const win = window.open('', '_blank', 'width=600,height=800')
+    const rxDate = new Date(savedRx.prescribed_at || new Date()).toLocaleDateString()
+    const rxTime = new Date(savedRx.prescribed_at || new Date()).toLocaleTimeString()
+    
     const itemRows = outOfStockItems.map((item, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td><strong>${item.drug_name || 'Drug'}</strong><br/><span style="font-size:11px;color:#555">${item.drug_form || ''} ${item.strength || ''}</span></td>
+        <td><strong>${item.drug_name || 'Drug'}</strong><br/><span style="font-size:11px;color:#555">${item.drug_form || ''}</span></td>
         <td>${item.dose || '—'}</td>
         <td>${item.frequency || '—'}</td>
-        <td>${item.duration || '—'} day(s)</td>
+        <td>${item.duration || '—'}</td>
         <td>${item.quantity || '—'}</td>
         <td style="font-size:11px">${[item.instructions_en, item.instructions_am].filter(Boolean).join(' / ') || '—'}</td>
       </tr>
     `).join('')
     win.document.write(`
       <!DOCTYPE html><html><head>
-      <title>Out-of-Stock Prescription</title>
+      <title>External Prescription</title>
       <style>
         body { font-family: Arial, sans-serif; padding: 28px; color: #111; font-size: 13px; }
         .clinic-name { font-size: 19px; font-weight: 700; text-align: center; margin-bottom: 2px; }
@@ -1999,16 +2206,20 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
         @media print { body { padding: 10px; } }
       </style></head><body>
         <div class="clinic-name">Kassahun Medium Clinic</div>
-        <div class="clinic-sub">Shagar City, Oromia, Ethiopia &nbsp;|&nbsp; Tel: +251 911 000000</div>
+        <div class="clinic-sub">Shagar City, Oromia, Ethiopia &nbsp;|&nbsp; Tel: +251 911813466</div>
         <hr />
-        <div style="display:flex;align-items:center">
-          <div class="rx-symbol">&#8478;</div>
-          <div class="rx-title">Medical Prescription (External Referral)</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center">
+            <div class="rx-symbol">&#8478;</div>
+            <div class="rx-title">MEDICAL PRESCRIPTION</div>
+          </div>
+          <div style="font-size:12px; font-weight:600;">RX#: ${savedRx.prescription_number || 'N/A'}</div>
         </div>
-        <div class="notice">⚠️ The following medications are currently <strong>out of stock</strong> at our pharmacy. The patient has been referred to purchase from an external pharmacy.</div>
         <div class="info-grid">
           <div class="info-row"><span>Date:</span> ${rxDate} ${rxTime}</div>
-          <div class="info-row"><span>Doctor:</span> ${patientData?.doctorName || '___________'}</div>
+          <div class="info-row"><span>Doctor:</span> ${savedRx.prescribed_by_name || '___________'}</div>
+          <div class="info-row"><span>Patient:</span> ${patient ? `${patient.first_name_en} ${patient.last_name_en}` : savedRx.patient_name || '___________'}</div>
+          <div class="info-row"><span>MRN:</span> ${patient?.patient_number || savedRx.patient_number || '___________'}</div>
         </div>
         <hr />
         <table>
@@ -2023,26 +2234,30 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
       </body></html>
     `)
     win.document.close()
-    win.print()
+    
+    // Give browser a moment to parse the HTML before printing
+    win.setTimeout(() => {
+      win.print()
+    }, 250)
   }
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-lg" style={{ maxWidth: '850px' }}>
         <div className="modal-header">
-          <h3><Pill size={16} style={{marginRight:6}} />{savedRx ? 'Print & Confirm — Out-of-Stock Drugs' : 'New Drug Prescription'}</h3>
+          <h3><Pill size={16} style={{marginRight:6}} />{savedRx ? 'Print External Prescription' : 'New Drug Prescription'}</h3>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>✕</button>
         </div>
 
-        {/* ── Post-save: out-of-stock print confirmation ── */}
+        {/* ── Post-save: external print confirmation ── */}
         {savedRx ? (
           <div style={{padding:'2rem', display:'flex', flexDirection:'column', gap:'1.2rem'}}>
-            <div style={{background:'hsla(38,100%,50%,0.12)', border:'1px solid hsla(38,100%,50%,0.4)', borderRadius:'var(--radius-md)', padding:'1rem 1.2rem'}}>
-              <div style={{fontWeight:700, fontSize:'0.95rem', marginBottom:'0.4rem', color:'var(--color-warning, #f59e0b)'}}>
-                ⚠️ Prescription saved — {outOfStockItems.length} drug(s) out of stock
+            <div style={{background:'hsla(210,100%,50%,0.12)', border:'1px solid hsla(210,100%,50%,0.4)', borderRadius:'var(--radius-md)', padding:'1rem 1.2rem'}}>
+              <div style={{fontWeight:700, fontSize:'0.95rem', marginBottom:'0.4rem', color:'var(--color-primary)'}}>
+                ℹ️ Prescription saved — {outOfStockItems.length} external drug(s)
               </div>
               <p style={{margin:0, fontSize:'0.85rem', color:'var(--text-secondary)'}}>
-                The following drugs are <strong>out of stock</strong> at our pharmacy. Please print a prescription slip so the patient can purchase them from another pharmacy. Click <strong>"I Have Printed"</strong> to confirm.
+                The following drugs were prescribed for an <strong>external pharmacy</strong>. Please print a prescription slip for the patient. Click <strong>"Done"</strong> to finish.
               </p>
             </div>
 
@@ -2076,17 +2291,17 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
                 type="button"
                 className="btn btn-primary"
                 style={{display:'inline-flex', alignItems:'center', gap:'0.4rem'}}
-                onClick={() => printOutOfStockSlip({})}
+                onClick={() => printExternalPrescription()}
               >
-                <Printer size={15} /> Print Prescription for Patient
+                <Printer size={15} /> Print Prescription
               </button>
               <button
                 type="button"
                 className="btn btn-ghost"
                 style={{display:'inline-flex', alignItems:'center', gap:'0.4rem', borderColor:'var(--success)', color:'var(--success)'}}
-                onClick={() => { toast.success('Confirmed: prescription printed for patient'); onSaved() }}
+                onClick={() => { onSaved() }}
               >
-                <CheckCircle size={15} /> I Have Printed &amp; Given to Patient
+                <CheckCircle size={15} /> Done
               </button>
             </div>
           </div>
@@ -2136,22 +2351,60 @@ function NewPrescriptionModal({ patientId, onClose, onSaved }) {
                     )}
 
                     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'0.8rem', marginTop:'0.5rem' }}>
-                      <div className="form-group">
-                        <label className="form-label">Drug *</label>
-                        <select
-                          className="form-select"
-                          value={it.drug_id}
-                          onChange={e => updateItem(idx, 'drug_id', e.target.value)}
-                          required
-                        >
-                          <option value="">Select drug…</option>
-                          {drugs.map(d => (
-                            <option key={d.id} value={d.id}>
-                              {d.name_generic_en} {d.strength} {d.name_brand ? `(${d.name_brand})` : ''} {d.current_stock <= 0 ? '⚠ Out of Stock' : `[Stock: ${d.current_stock}]`}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="form-group" style={{gridColumn: '1 / -1'}}>
+                        <div style={{display:'flex', gap:'1rem', marginBottom:'0.5rem'}}>
+                          <label style={{display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.85rem'}}>
+                            <input type="radio" name={`source_${idx}`} checked={it.fulfillment_source === 'CLINIC_PHARMACY'} onChange={() => updateItem(idx, 'fulfillment_source', 'CLINIC_PHARMACY')} />
+                            Internal Pharmacy (Stock)
+                          </label>
+                          <label style={{display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.85rem'}}>
+                            <input type="radio" name={`source_${idx}`} checked={it.fulfillment_source === 'EXTERNAL_PHARMACY'} onChange={() => updateItem(idx, 'fulfillment_source', 'EXTERNAL_PHARMACY')} />
+                            External Pharmacy (Printable)
+                          </label>
+                        </div>
                       </div>
+
+                      {it.fulfillment_source === 'CLINIC_PHARMACY' ? (
+                        <div className="form-group" style={{gridColumn: '1 / -1'}}>
+                          <label className="form-label">Drug (Internal) *</label>
+                          <select
+                            className="form-select"
+                            value={it.drug_id}
+                            onChange={e => updateItem(idx, 'drug_id', e.target.value)}
+                            required={it.fulfillment_source === 'CLINIC_PHARMACY'}
+                          >
+                            <option value="">Select drug from stock…</option>
+                            {drugs.map(d => (
+                              <option key={d.id} value={d.id}>
+                                {d.name_generic_en} {d.strength} {d.name_brand ? `(${d.name_brand})` : ''} {d.current_stock <= 0 ? '⚠ Out of Stock' : `[Stock: ${d.current_stock}]`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="form-group" style={{gridColumn: '1 / -1', display: 'flex', gap: '1rem', alignItems: 'flex-start'}}>
+                          <div style={{flex: 1}}>
+                            <label className="form-label">External Drug Name *</label>
+                            <input
+                              className="form-input"
+                              placeholder="Type drug name..."
+                              value={it.external_drug_name}
+                              onChange={e => updateItem(idx, 'external_drug_name', e.target.value)}
+                              required={it.fulfillment_source === 'EXTERNAL_PHARMACY'}
+                            />
+                          </div>
+                          <div style={{paddingTop: '1.8rem'}}>
+                            <label style={{display:'flex', alignItems:'center', gap:'0.4rem', cursor:'pointer', fontSize:'0.85rem'}}>
+                              <input 
+                                type="checkbox" 
+                                checked={it.is_external_injection} 
+                                onChange={e => updateItem(idx, 'is_external_injection', e.target.checked)} 
+                              />
+                              Is Injection?
+                            </label>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="form-group">
                         <label className="form-label">Dose *</label>
@@ -2304,7 +2557,7 @@ function PatientInjections({ patientId, patient }) {
   const injectionItems = []
   prescriptions.forEach(p => {
     (p.items || []).forEach(item => {
-      if (item.drug_form?.toLowerCase() === 'injection') {
+      if (item.drug_form?.toLowerCase() === 'injection' || item.is_external_injection) {
         injectionItems.push({ ...item, prescription: p })
       }
     })
@@ -2415,3 +2668,168 @@ function PatientInjections({ patientId, patient }) {
     </>
   )
 }
+
+function PatientBeds({ patientId, patient, onRefresh }) {
+  const [admissions, setAdmissions] = useState([])
+  const [availableBeds, setAvailableBeds] = useState([])
+  const [wards, setWards] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selectedWard, setSelectedWard] = useState('')
+  const [selectedBed, setSelectedBed] = useState('')
+  const [admitting, setAdmitting] = useState(false)
+  const [discharging, setDischarging] = useState(null)
+  
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const [admRes, wRes, bRes] = await Promise.all([
+        bedsApi.admissions({ patient_id: patientId, status: 'active' }),
+        bedsApi.wards(),
+        bedsApi.beds({ status: 'available' })
+      ])
+      setAdmissions(admRes.data)
+      setWards(wRes.data)
+      setAvailableBeds(bRes.data)
+    } catch (err) {
+      toast.error(apiError(err, 'Failed to load bed data'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [patientId])
+
+  const handleAdmit = async (e) => {
+    e.preventDefault()
+    if (!selectedBed) return toast.error('Please select a bed')
+    
+    let visitId = null
+    try {
+      const vRes = await visitsApi.patientVisits(patientId, { status: 'open', limit: 1 })
+      if (vRes.data.items && vRes.data.items.length > 0) {
+        visitId = vRes.data.items[0].id
+      }
+    } catch (e) {}
+
+    setAdmitting(true)
+    try {
+      await bedsApi.admit({
+        patient_id: patientId,
+        visit_id: visitId,
+        bed_id: parseInt(selectedBed)
+      })
+      toast.success('Patient admitted to bed')
+      setSelectedWard('')
+      setSelectedBed('')
+      loadData()
+      if (onRefresh) onRefresh()
+    } catch (err) {
+      toast.error(apiError(err, 'Failed to admit patient'))
+    } finally {
+      setAdmitting(false)
+    }
+  }
+
+  const handleDischarge = async (admissionId) => {
+    setDischarging(admissionId)
+    try {
+      await bedsApi.discharge(admissionId, { discharge_condition: 'improved' })
+      toast.success('Patient discharged from bed')
+      loadData()
+      if (onRefresh) onRefresh()
+    } catch (err) {
+      toast.error(apiError(err, 'Failed to discharge patient'))
+    } finally {
+      setDischarging(null)
+    }
+  }
+
+  const filteredBeds = selectedWard ? availableBeds.filter(b => b.ward_id == selectedWard) : availableBeds
+
+  if (loading) return <div className="card"><div className="empty-state">Loading...</div></div>
+
+  return (
+    <div className="card">
+      <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <BedDouble size={20} /> Inpatient Beds
+      </h3>
+
+      {admissions.length > 0 ? (
+        <div style={{ marginBottom: '2rem' }}>
+          <h4>Active Admission</h4>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Admission #</th>
+                  <th>Date Admitted</th>
+                  <th>Bed ID</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {admissions.map(adm => (
+                  <tr key={adm.id}>
+                    <td className="mono">{adm.admission_number}</td>
+                    <td>{new Date(adm.admitted_at).toLocaleString()}</td>
+                    <td>{adm.bed_id}</td>
+                    <td>
+                      <button 
+                        className="btn btn-sm btn-danger" 
+                        onClick={() => handleDischarge(adm.id)}
+                        disabled={discharging === adm.id}
+                      >
+                        {discharging === adm.id ? 'Discharging...' : 'Discharge'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginBottom: '2rem' }}>
+          <p className="text-muted">This patient is not currently admitted to a bed.</p>
+        </div>
+      )}
+
+      {admissions.length === 0 && (
+        <div>
+          <h4 style={{ marginBottom: '1rem' }}>Assign a Bed</h4>
+          <form onSubmit={handleAdmit} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ margin: 0, minWidth: '200px' }}>
+              <label>Select Ward</label>
+              <select className="form-control" value={selectedWard} onChange={e => { setSelectedWard(e.target.value); setSelectedBed('') }}>
+                <option value="">-- Any Ward --</option>
+                {wards.map(w => (
+                  <option key={w.id} value={w.id}>{w.name_en}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="form-group" style={{ margin: 0, minWidth: '200px' }}>
+              <label>Select Available Bed</label>
+              <select className="form-control" value={selectedBed} onChange={e => setSelectedBed(e.target.value)} required>
+                <option value="">-- Select Bed --</option>
+                {filteredBeds.map(b => (
+                  <option key={b.id} value={b.id}>Bed #{b.bed_number} ({b.bed_type})</option>
+                ))}
+              </select>
+            </div>
+
+            <button type="submit" className="btn btn-primary" disabled={admitting}>
+              {admitting ? 'Admitting...' : 'Admit Patient'}
+            </button>
+          </form>
+          {filteredBeds.length === 0 && selectedWard && (
+            <p className="text-danger" style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>No available beds in this ward.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { reportsApi, adminApi, apiError } from '../api'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -18,9 +18,9 @@ import './Reports.css'
 const COLORS = ['#3b9eff','#2ec98c','#f8a722','#e05c5c','#a78bfa','#34d399']
 const PERIODS = ['today', 'week', 'month', 'year']
 
-const MONTH_NAMES = [
-  '', 'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
+const EC_MONTH_NAMES = [
+  '', 'Meskerem', 'Tikimt', 'Hidar', 'Tahsas', 'Tir', 'Yekatit',
+  'Megabit', 'Miazia', 'Ginbot', 'Sene', 'Hamle', 'Nehasse', 'Pagume'
 ]
 
 // ─── Helper: compute Monday of a given date's ISO week ───────────────────────
@@ -49,45 +49,20 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
 }
 
-// ─── Helper: robust print / PDF trigger via hidden iframe with tab fallback ──
-function printHtmlBlob(blob, title = 'Report') {
-  const objectUrl = URL.createObjectURL(blob)
-  const iframe = document.createElement('iframe')
-  iframe.style.position = 'fixed'
-  iframe.style.right = '0'
-  iframe.style.bottom = '0'
-  iframe.style.width = '0'
-  iframe.style.height = '0'
-  iframe.style.border = '0'
-  iframe.style.zIndex = '-9999'
-  iframe.title = title
-  iframe.src = objectUrl
-
-  let printed = false
-  const triggerPrint = () => {
-    if (printed) return
-    printed = true
-    try {
-      iframe.focus()
-      iframe.contentWindow.print()
-    } catch {
-      window.open(objectUrl, '_blank')
-    }
+function printHtmlContent(htmlString, title = 'Report') {
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.open()
+    printWindow.document.write(htmlString)
+    printWindow.document.close()
+    printWindow.document.title = title
     setTimeout(() => {
-      iframe.remove()
-      URL.revokeObjectURL(objectUrl)
-    }, 60000)
+      printWindow.focus()
+      printWindow.print()
+    }, 500)
+  } else {
+    toast.error('Popup blocked. Please allow popups for this site to print.')
   }
-
-  iframe.onload = () => {
-    setTimeout(triggerPrint, 250)
-  }
-  iframe.onerror = () => {
-    window.open(objectUrl, '_blank')
-    iframe.remove()
-  }
-
-  document.body.appendChild(iframe)
 }
 
 // ─── Helper: parse blob error if server responded with an error JSON ─────────
@@ -115,53 +90,46 @@ function EmptyReportState({ message = 'No report data available for this period'
 }
 
 // ─── Section-grouped preview table ───────────────────────────────────────────
-function HmisPreviewTable({ data }) {
+function HmisPreviewTable({ data, year, month }) {
   const [searchTerm, setSearchTerm] = useState('')
+  const [traceRule, setTraceRule] = useState(null)
 
-  if (!data || data.length === 0) return <EmptyReportState message="No indicators defined or available for this report type" />
+  if (!data || !data.sections || data.sections.length === 0) return <EmptyReportState message="No indicators defined or available for this report type" />
 
-  // Calculate summary metrics across all data
+  const sections = data.sections
+
+  // Calculate summary metrics across all data (which is now a list of sections)
   let totalEvents = 0
-  data.forEach(row => {
-    const groups = row.groups || {}
-    Object.entries(groups).forEach(([k, v]) => {
-      if (k === 'Total' && typeof v === 'number') {
-        totalEvents += v
-      } else if (!groups.Total && typeof v === 'number') {
-        totalEvents += v
+  let totalIndicators = 0
+  
+  sections.forEach(sec => {
+    (sec.indicators || []).forEach(ind => {
+      totalIndicators++
+      if (ind.breakdowns && ind.breakdowns.length > 0) {
+        totalEvents += ind.breakdowns.reduce((sum, c) => sum + (c.value || 0), 0)
+      } else {
+        totalEvents += (ind.value || 0)
       }
     })
   })
 
-  // Filter rows based on search
-  const filteredData = data.filter(row => {
-    if (!searchTerm.trim()) return true
+  // Group rows by section, respecting search term
+  const filteredSections = []
+  sections.forEach(sec => {
     const term = searchTerm.toLowerCase()
-    return (
-      (row.indicator || '').toLowerCase().includes(term) ||
-      (row.section || '').toLowerCase().includes(term)
-    )
+    const secMatches = sec.section_name.toLowerCase().includes(term)
+    
+    const matchedItems = (sec.indicators || []).filter(ind => {
+      if (secMatches) return true
+      if (ind.indicator_name.toLowerCase().includes(term)) return true
+      if (ind.breakdowns && ind.breakdowns.some(c => c.dimension.toLowerCase().includes(term))) return true
+      return false
+    })
+    
+    if (matchedItems.length > 0) {
+      filteredSections.push({ ...sec, indicators: matchedItems })
+    }
   })
-
-  // Group rows by section
-  const sections = {}
-  filteredData.forEach(row => {
-    const sec = row.section || 'General Indicators'
-    if (!sections[sec]) sections[sec] = []
-    sections[sec].push(row)
-  })
-
-  // Collect all column headers across all rows in each section
-  const getGroupCols = (rows) => {
-    const cols = new Set()
-    rows.forEach(r => Object.keys(r.groups || {}).forEach(k => {
-      if (k !== 'Total') cols.add(k)
-    }))
-    const sorted = [...cols]
-    const hasTotal = rows.some(r => 'Total' in (r.groups || {}))
-    if (hasTotal) sorted.push('Total')
-    return sorted
-  }
 
   return (
     <div className="hmis-preview-wrap">
@@ -169,11 +137,11 @@ function HmisPreviewTable({ data }) {
       <div className="hmis-preview-summary-bar">
         <div className="hmis-summary-stat-pill">
           <span className="hmis-stat-label">Total Indicators</span>
-          <span className="hmis-stat-val">{data.length}</span>
+          <span className="hmis-stat-val">{totalIndicators}</span>
         </div>
         <div className="hmis-summary-stat-pill">
           <span className="hmis-stat-label">Report Sections</span>
-          <span className="hmis-stat-val">{Object.keys(sections).length}</span>
+          <span className="hmis-stat-val">{sections.length}</span>
         </div>
         <div className="hmis-summary-stat-pill highlight">
           <span className="hmis-stat-label">Total Cases / Events</span>
@@ -195,48 +163,55 @@ function HmisPreviewTable({ data }) {
         </div>
       </div>
 
-      {filteredData.length === 0 ? (
+      {filteredSections.length === 0 ? (
         <EmptyReportState message={`No indicators match "${searchTerm}"`} />
       ) : (
-        Object.entries(sections).map(([section, rows]) => {
-          const cols = getGroupCols(rows)
+        filteredSections.map((sec, sIdx) => {
           return (
-            <div key={section} className="hmis-section-block">
+            <div key={sIdx} className="hmis-section-block">
               <div className="hmis-section-header">
-                <span>{section}</span>
-                <span className="hmis-section-count">{rows.length} {rows.length === 1 ? 'indicator' : 'indicators'}</span>
+                <span>{sec.section_name}</span>
+                <span className="hmis-section-count">{sec.indicators.length} {sec.indicators.length === 1 ? 'indicator' : 'indicators'}</span>
               </div>
               <div className="hmis-table-wrap">
                 <table className="hmis-table">
                   <thead>
                     <tr>
-                      <th className="hmis-th-indicator">Indicator</th>
-                      {cols.map(c => (
-                        <th key={c} className={`hmis-th-group ${c === 'Total' ? 'th-total' : ''}`}>
-                          {c}
-                        </th>
-                      ))}
+                      <th className="hmis-th-indicator">Indicator Name</th>
+                      <th className="hmis-th-group" style={{ width: '120px', textAlign: 'right' }}>Value (Total)</th>
+                      <th style={{ width: '60px' }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row, i) => (
-                      <tr key={i} className={i % 2 === 0 ? 'hmis-row-even' : 'hmis-row-odd'}>
-                        <td className="hmis-td-indicator">{row.indicator}</td>
-                        {cols.map(c => {
-                          const val = row.groups?.[c]
-                          const isTotal = c === 'Total'
-                          const isZero = val === 0
-                          const isNumber = typeof val === 'number'
-                          return (
-                            <td
-                              key={c}
-                              className={`hmis-td-value ${isTotal ? 'td-total' : ''} ${!isZero && isNumber ? 'td-nonzero' : ''}`}
-                            >
-                              {isNumber ? val : (val === undefined ? '—' : JSON.stringify(val))}
+                    {sec.indicators.map((ind, i) => (
+                      <React.Fragment key={i}>
+                        {/* Parent Row */}
+                        <tr className="hmis-row-parent" style={{ background: 'var(--bg-subtle)' }}>
+                          <td className="hmis-td-indicator" style={{ fontWeight: 600 }}>{ind.indicator_code}. {ind.indicator_name}</td>
+                          <td className="hmis-td-value td-nonzero" style={{ fontWeight: 600, textAlign: 'right' }}>
+                            {!ind.breakdowns || ind.breakdowns.length === 0 ? ind.value : ind.value}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {ind.value > 0 && (
+                              <button className="btn btn-ghost btn-xs" onClick={() => setTraceRule(ind.indicator_code)} title="Trace Calculation">
+                                <Search size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {/* Child Rows */}
+                        {(ind.breakdowns || []).map((child, j) => (
+                          <tr key={j} className="hmis-row-child" style={{ background: 'var(--bg-card)' }}>
+                            <td className="hmis-td-indicator" style={{ paddingLeft: '2.5rem', color: 'var(--text-secondary)' }}>
+                              {child.dimension}
                             </td>
-                          )
-                        })}
-                      </tr>
+                            <td className={`hmis-td-value ${child.value > 0 ? 'td-nonzero' : ''}`} style={{ textAlign: 'right' }}>
+                              {child.value}
+                            </td>
+                            <td></td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -245,6 +220,144 @@ function HmisPreviewTable({ data }) {
           )
         })
       )}
+      
+      {traceRule && (
+        <CalculationTraceModal 
+          year={year} 
+          month={month} 
+          ruleNum={traceRule} 
+          onClose={() => setTraceRule(null)} 
+        />
+      )}
+    </div>
+  )
+}
+
+function PhemPreviewTable({ data }) {
+  if (!data || !data.pages || data.pages.length === 0) return <EmptyReportState message="No PHEM data available for this week" />
+
+  let totalIndicators = 0
+  let totalEvents = 0
+  
+  data.pages.forEach(p => {
+    (p.indicators || []).forEach(ind => {
+      totalIndicators++
+      totalEvents += (ind.outpatient || 0) + (ind.inpatient || 0)
+    })
+  })
+
+  return (
+    <div className="hmis-preview-wrap">
+      <div className="hmis-preview-summary-bar">
+        <div className="hmis-summary-stat-pill">
+          <span className="hmis-stat-label">Total Indicators</span>
+          <span className="hmis-stat-val">{totalIndicators}</span>
+        </div>
+        <div className="hmis-summary-stat-pill">
+          <span className="hmis-stat-label">Report Pages</span>
+          <span className="hmis-stat-val">{data.pages.length}</span>
+        </div>
+        <div className="hmis-summary-stat-pill highlight">
+          <span className="hmis-stat-label">Total Cases / Events</span>
+          <span className="hmis-stat-val">{totalEvents}</span>
+        </div>
+      </div>
+
+      {data.pages.map((page, pIdx) => (
+        <div key={pIdx} className="hmis-section-block">
+          <div className="hmis-section-header">
+            <span>{page.title}</span>
+            <span className="hmis-section-count">{page.indicators.length} indicators</span>
+          </div>
+          <div className="hmis-table-wrap">
+            <table className="hmis-table">
+              <thead>
+                <tr>
+                  <th className="hmis-th-indicator">Notifiable Disease / Indicator</th>
+                  <th style={{ width: '100px', textAlign: 'right' }}>Outpatient</th>
+                  <th style={{ width: '100px', textAlign: 'right' }}>Inpatient</th>
+                  <th style={{ width: '100px', textAlign: 'right' }}>Deaths</th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.indicators.map((ind, i) => (
+                  <tr key={i} className="hmis-row-parent" style={{ background: i % 2 === 0 ? 'var(--bg-subtle)' : 'var(--bg-card)' }}>
+                    <td className="hmis-td-indicator" style={{ fontWeight: 500 }}>{ind.indicator}</td>
+                    <td className={`hmis-td-value ${ind.outpatient ? 'td-nonzero' : ''}`} style={{ textAlign: 'right' }}>
+                      {ind.outpatient !== null ? ind.outpatient : '-'}
+                    </td>
+                    <td className={`hmis-td-value ${ind.inpatient ? 'td-nonzero' : ''}`} style={{ textAlign: 'right' }}>
+                      {ind.inpatient !== null ? ind.inpatient : '-'}
+                    </td>
+                    <td className={`hmis-td-value ${ind.deaths ? 'td-nonzero' : ''}`} style={{ textAlign: 'right' }}>
+                      {ind.deaths !== null ? ind.deaths : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CalculationTraceModal({ year, month, ruleNum, onClose }) {
+  const [trace, setTrace] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    reportsApi.traceIndicator({ year, month, rule_num: ruleNum })
+      .then(res => setTrace(res.data))
+      .catch(err => toast.error('Failed to load trace'))
+      .finally(() => setLoading(false))
+  }, [year, month, ruleNum])
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-content" style={{ maxWidth: '800px', width: '90%' }}>
+        <h3 style={{ marginTop: 0 }}>Calculation Trace: Indicator {ruleNum}</h3>
+        {loading ? (
+          <div className="loading-center"><Loader2 className="spinning" size={32} /></div>
+        ) : !trace ? (
+          <p>Failed to load trace</p>
+        ) : (
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <p><strong>Rule Definition:</strong> {trace.rule_definition}</p>
+            <p><strong>Total Valid Events:</strong> {trace.total_events_evaluated}</p>
+            
+            {trace.events_included && trace.events_included.length > 0 ? (
+              <table style={{ width: '100%', fontSize: '0.85rem', marginTop: '1rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: 'var(--bg-secondary)' }}>
+                    <th style={{ padding: '0.5rem' }}>Date</th>
+                    <th style={{ padding: '0.5rem' }}>Patient ID</th>
+                    <th style={{ padding: '0.5rem' }}>Code</th>
+                    <th style={{ padding: '0.5rem' }}>Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trace.events_included.map((evt, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '0.5rem' }}>{new Date(evt.event_datetime).toLocaleString()}</td>
+                      <td style={{ padding: '0.5rem' }}>{evt.patient_id}</td>
+                      <td style={{ padding: '0.5rem' }}>{evt.code}</td>
+                      <td style={{ padding: '0.5rem' }}>{evt.source_record_type} ({evt.source_record_id})</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p>No events found for this indicator.</p>
+            )}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -302,8 +415,10 @@ function GovernmentReportsTab() {
   const [subTab, setSubTab] = useState('monthly')
 
   // Monthly state
-  const [month, setMonth]   = useState(thisMonth())
-  const [year, setYear]     = useState(thisYear())
+  const [month, setMonth]   = useState(null)
+  const [year, setYear]     = useState(null)
+  const [gregorianRange, setGregorianRange] = useState(null)
+  const [periodLoading, setPeriodLoading] = useState(false)
 
   // Weekly state
   const [weekStart, setWeekStart] = useState(isoWeekMonday(todayISO()))
@@ -331,6 +446,28 @@ function GovernmentReportsTab() {
       .catch(() => setWeekLabel(null))
       .finally(() => setWeekLabelLoading(false))
   }, [weekStart])
+
+  // Fetch default EC period on mount
+  useEffect(() => {
+    if (subTab === 'monthly' && month === null && year === null) {
+      setPeriodLoading(true)
+      reportsApi.hmisEthiopianPeriod(null, null).then(r => {
+        setYear(r.data.ethiopian_year)
+        setMonth(r.data.ethiopian_month)
+        setGregorianRange(r.data.gregorian_display_range)
+      }).finally(() => setPeriodLoading(false))
+    }
+  }, [subTab, month, year])
+
+  // Update Gregorian range when EC month/year changes
+  useEffect(() => {
+    if (subTab === 'monthly' && year !== null && month !== null) {
+      setPeriodLoading(true)
+      reportsApi.hmisEthiopianPeriod(year, month).then(r => {
+        setGregorianRange(r.data.gregorian_display_range)
+      }).finally(() => setPeriodLoading(false))
+    }
+  }, [year, month, subTab])
 
   // Reset preview when sub-tab or params change
   useEffect(() => {
@@ -396,13 +533,13 @@ function GovernmentReportsTab() {
     try {
       if (subTab === 'monthly') {
         const res = await reportsApi.hmisExportHtml(year, month)
-        const blob = new Blob([res.data], { type: 'text/html' })
-        printHtmlBlob(blob, `HMIS_Monthly_${year}_${month}`)
+        const text = await res.data.text()
+        printHtmlContent(text, `HMIS_Monthly_${year}_${month}`)
         toast.success('Print document prepared')
       } else if (subTab === 'weekly') {
         const res = await reportsApi.hmisExportWeeklyHtml(`${weekStart}T00:00:00`)
-        const blob = new Blob([res.data], { type: 'text/html' })
-        printHtmlBlob(blob, `PHEM_Weekly_${weekStart}`)
+        const text = await res.data.text()
+        printHtmlContent(text, `PHEM_Weekly_${weekStart}`)
         toast.success('Print document prepared')
       }
     } catch (err) {
@@ -413,7 +550,7 @@ function GovernmentReportsTab() {
     }
   }
 
-  const currentYear = thisYear()
+  const currentYear = year || 2017 // fallback if null
   const years = Array.from({ length: 6 }, (_, i) => currentYear - i)
 
   return (
@@ -442,29 +579,40 @@ function GovernmentReportsTab() {
           {subTab === 'monthly' && (
             <div className="hmis-controls-row">
               <div className="hmis-control-group">
-                <label className="hmis-label" htmlFor="hmis-month">Month</label>
+                <label className="hmis-label" htmlFor="hmis-month">Ethiopian Month</label>
                 <select
                   id="hmis-month"
                   className="hmis-select"
-                  value={month}
+                  value={month || ''}
                   onChange={e => setMonth(Number(e.target.value))}
+                  disabled={periodLoading}
                 >
-                  {MONTH_NAMES.slice(1).map((name, i) => (
+                  {EC_MONTH_NAMES.slice(1).map((name, i) => (
                     <option key={i + 1} value={i + 1}>{name}</option>
                   ))}
                 </select>
               </div>
               <div className="hmis-control-group">
-                <label className="hmis-label" htmlFor="hmis-year">Year</label>
+                <label className="hmis-label" htmlFor="hmis-year">Ethiopian Year</label>
                 <select
                   id="hmis-year"
                   className="hmis-select"
-                  value={year}
+                  value={year || ''}
                   onChange={e => setYear(Number(e.target.value))}
+                  disabled={periodLoading}
                 >
                   {years.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
+              {gregorianRange && (
+                <div className="hmis-week-label-badge" style={{ marginTop: 'auto', marginBottom: '8px' }}>
+                  <CalendarDays size={14} />
+                  <span>
+                    <strong>Gregorian:</strong> {gregorianRange}
+                  </span>
+                </div>
+              )}
+              {periodLoading && <Loader2 size={14} className="spinning" style={{ marginTop: 'auto', marginBottom: '8px', color: 'var(--text-muted)' }} />}
               <button
                 id="hmis-generate-btn"
                 className="btn btn-primary hmis-generate-btn"
@@ -587,8 +735,12 @@ function GovernmentReportsTab() {
             </div>
           )}
 
-          {fetched && !loading && subTab !== 'cohort' && (
-            <HmisPreviewTable data={reportData} />
+          {fetched && !loading && subTab === 'monthly' && (
+            <HmisPreviewTable data={reportData} year={year} month={month} />
+          )}
+
+          {fetched && !loading && subTab === 'weekly' && (
+            <PhemPreviewTable data={reportData} />
           )}
 
           {fetched && !loading && subTab === 'cohort' && (

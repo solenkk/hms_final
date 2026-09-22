@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { billingApi, apiError } from '../api'
-import { ReceiptText, Plus, CreditCard, Clock, CheckCircle, User, AlertTriangle, XCircle } from 'lucide-react'
+import { billingApi, patientsApi, apiError } from '../api'
+import { ReceiptText, Plus, CreditCard, Clock, CheckCircle, User, AlertTriangle, XCircle, Settings, BedDouble } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { adminApi } from '../api'
 
 export default function Billing() {
   const [tab, setTab] = useState('pending')
+  const [showSettings, setShowSettings] = useState(false)
 
   return (
     <div className="page-body">
@@ -25,11 +27,102 @@ export default function Billing() {
         <button className={`tab-btn ${tab==='create'?'active':''}`} onClick={() => setTab('create')}>
           <Plus size={14} style={{ marginRight: 4 }} />Create Invoice
         </button>
+        <div style={{ flex: 1 }} />
+        <button className="tab-btn" onClick={() => setShowSettings(true)} style={{ color: 'var(--color-primary)' }}>
+          <Settings size={14} style={{ marginRight: 4 }} />Fee Settings
+        </button>
       </div>
 
       {tab === 'pending' && <PendingPayments />}
       {tab === 'recent' && <RecentInvoices />}
       {tab === 'create' && <CreateInvoiceForm />}
+
+      {showSettings && <FeeSettingsModal onClose={() => setShowSettings(false)} />}
+    </div>
+  )
+}
+
+function FeeSettingsModal({ onClose }) {
+  const [rate, setRate] = useState('')
+  const [regFee, setRegFee] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    adminApi.getFacilitySettings()
+      .then(r => {
+        setRate(r.data.bed_hourly_rate || 0)
+        setRegFee(r.data.patient_registration_fee || 100.00)
+      })
+      .catch(e => toast.error('Failed to load settings'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const save = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await adminApi.updateFacilitySettings({ 
+        bed_hourly_rate: parseFloat(rate),
+        patient_registration_fee: parseFloat(regFee)
+      })
+      toast.success('Fee settings updated')
+      onClose()
+    } catch (err) {
+      toast.error('Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 450 }}>
+        <div className="modal-header">
+          <h3><Settings size={16} style={{ marginRight: 6 }} />Fee Settings</h3>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <form onSubmit={save}>
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {loading ? <p>Loading...</p> : (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Patient Registration Fee (ETB)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    className="form-input" 
+                    value={regFee} 
+                    onChange={e => setRegFee(e.target.value)} 
+                    required 
+                  />
+                  <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: 4 }}>This fee is charged for new patients. If a patient hasn't visited in 1 month, they will pay 75% of this rate.</p>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Hourly Bed Rate (Birr/hr)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    className="form-input" 
+                    value={rate} 
+                    onChange={e => setRate(e.target.value)} 
+                    required 
+                  />
+                  <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: 4 }}>This rate will be used to calculate bed charges when invoices are generated.</p>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving || loading}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -461,7 +554,7 @@ function RecentInvoices() {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function CreateInvoiceForm() {
-  const [form, setForm] = useState({ patient_id: '', visit_id: '', items: [{ description_en: '', quantity: 1, unit_price: 0, service_type: 'consultation' }] })
+  const [form, setForm] = useState({ patient_id: '', visit_id: '', items: [{ description_en: '', quantity: 1, unit_price: 0, item_type: 'consultation' }] })
   const [saving, setSaving] = useState(false)
 
   const handle = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
@@ -470,7 +563,7 @@ function CreateInvoiceForm() {
     items[i] = { ...items[i], [e.target.name]: e.target.value }
     setForm(f => ({ ...f, items }))
   }
-  const addItem = () => setForm(f => ({ ...f, items: [...f.items, { description_en: '', quantity: 1, unit_price: 0, service_type: 'consultation' }] }))
+  const addItem = () => setForm(f => ({ ...f, items: [...f.items, { description_en: '', quantity: 1, unit_price: 0, item_type: 'consultation' }] }))
   const removeItem = (i) => setForm(f => ({ ...f, items: f.items.filter((_,idx) => idx !== i) }))
 
   const total = form.items.reduce((s, item) => s + (Number(item.quantity) * Number(item.unit_price)), 0)
@@ -479,12 +572,31 @@ function CreateInvoiceForm() {
     e.preventDefault()
     setSaving(true)
     try {
-      const res = await billingApi.create(form)
+      let finalPatientId = form.patient_id.trim();
+      
+      // If patient_id doesn't look like a valid 36-char UUID, try to resolve it as an MRN (e.g. CL-2026-...)
+      if (finalPatientId.length < 36 && finalPatientId.length > 0) {
+        const pRes = await patientsApi.list({ patient_number: finalPatientId });
+        if (pRes.data && pRes.data.items && pRes.data.items.length > 0) {
+          finalPatientId = pRes.data.items[0].id;
+        } else {
+          toast.error(`Patient not found with ID/MRN: ${finalPatientId}`);
+          setSaving(false);
+          return;
+        }
+      }
+
+      const payload = {
+        ...form,
+        patient_id: finalPatientId,
+        visit_id: form.visit_id || undefined,
+        notes: form.notes || undefined
+      }
+      const res = await billingApi.create(payload)
       toast.success(`Invoice ${res.data.invoice_number} created`)
-      setForm({ patient_id:'', visit_id:'', items:[{ description_en:'', quantity:1, unit_price:0, service_type:'consultation'}] })
+      setForm({ patient_id:'', visit_id:'', items:[{ description_en:'', quantity:1, unit_price:0, item_type:'consultation'}] })
     } catch (err) {
-      const d = err.response?.data?.detail
-      toast.error(typeof d === 'object' ? d.en : d || 'Failed to create invoice')
+      toast.error(apiError(err, 'Failed to create invoice'))
     } finally { setSaving(false) }
   }
 
@@ -493,8 +605,8 @@ function CreateInvoiceForm() {
       <form onSubmit={submit}>
         <div className="form-grid" style={{ marginBottom: '1.5rem' }}>
           <div className="form-group">
-            <label className="form-label">Patient ID *</label>
-            <input className="form-input" name="patient_id" value={form.patient_id} onChange={handle} placeholder="UUID" required />
+            <label className="form-label">Patient ID or MRN *</label>
+            <input className="form-input" name="patient_id" value={form.patient_id} onChange={handle} placeholder="UUID or e.g. CL-2026-00003" required />
           </div>
           <div className="form-group">
             <label className="form-label">Visit ID</label>
@@ -519,8 +631,8 @@ function CreateInvoiceForm() {
             </div>
             <div className="form-group" style={{ flex: '0 0 160px' }}>
               <label className="form-label">Type</label>
-              <select className="form-select" name="service_type" value={item.service_type} onChange={e => handleItem(i, e)}>
-                {['consultation','lab','pharmacy','procedure','imaging','admission'].map(t => <option key={t}>{t}</option>)}
+              <select className="form-select" name="item_type" value={item.item_type} onChange={e => handleItem(i, e)}>
+                {['consultation','lab','pharmacy','bed','procedure','other'].map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             {form.items.length > 1 && (

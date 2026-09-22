@@ -71,14 +71,15 @@ export const patientsApi = {
   checkin:    (id)     => api.post(`/patients/${id}/checkin`),
 }
  
-// ─── Visits ───────────────────────────────────────────────────
 export const visitsApi = {
   list:    (params) => api.get('/visits', { params }),
   get:     (id)     => api.get(`/visits/${id}`),
   open:    (data)   => api.post('/visits', data),
-  close:   (id, data) => api.put(`/visits/${id}/close`, data),
+  close:   (id, data) => api.put(`/visits/${id}/close`, null, { params: data }),
   vitals:  (id, data) => api.post(`/visits/${id}/vitals`, data),
   patientVisits: (patientId, params) => api.get(`/visits/patients/${patientId}/visits`, { params }),
+  getReport:    (id) => api.get(`/visits/${id}/report`),
+  submitReport: (id, data) => api.post(`/visits/${id}/report`, data),
 }
  
 // ─── EMR ──────────────────────────────────────────────────────
@@ -142,10 +143,11 @@ export const billingApi = {
  
 // ─── Beds ─────────────────────────────────────────────────────
 export const bedsApi = {
-  wards:    ()     => api.get('/beds/wards'),
-  beds:     (params) => api.get('/beds', { params }),
-  admit:    (data) => api.post('/beds/admissions', data),
-  discharge:(id, data) => api.put(`/beds/admissions/${id}/discharge`, data),
+  wards:        () => api.get('/beds/wards'),
+  beds:         (params) => api.get('/beds', { params }),
+  admissions:   (params) => api.get('/beds/admissions', { params }),
+  admit:        (data) => api.post('/beds/admissions', data),
+  discharge:    (id, data) => api.put(`/beds/admissions/${id}/discharge`, data),
   getAdmission: (id) => api.get(`/beds/admissions/${id}`),
 }
  
@@ -160,14 +162,20 @@ export const reportsApi = {
   breach:    ()       => api.get('/reports/audit/breach-candidates'),
  
   // ─── Government / HMIS / PHEM ──────────────────────────────
+  createEvent:  (data) => api.post('/reports/hmis/events', data),
+  searchEvents:     (params) => api.get('/reports/hmis/events/search', { params }),
+  getEventCatalog:  () => api.get('/reports/hmis/events/catalog'),
+  exportEvents:     (params) => api.get('/reports/hmis/events/export', { params, responseType: 'blob' }),
+  traceIndicator: (params) => api.get('/reports/trace', { params }),
+  hmisEthiopianPeriod: (year, month) => api.get('/reports/hmis/ethiopian-period', { params: { year, month } }),
   hmisMonthly:  (year, month, facilityId) =>
     api.get('/reports/hmis/monthly', { params: { year, month, ...(facilityId ? { facility_id: facilityId } : {}) } }),
   hmisWeekly:   (weekStart, facilityId) =>
-    api.get('/reports/hmis/weekly', { params: { week_start: weekStart, ...(facilityId ? { facility_id: facilityId } : {}) } }),
+    api.get('/reports/phem/weekly', { params: { week_start: weekStart, ...(facilityId ? { facility_id: facilityId } : {}) } }),
   hmisCohort:   (targetDate, facilityId) =>
     api.get('/reports/hmis/cohort', { params: { target_date: targetDate, ...(facilityId ? { facility_id: facilityId } : {}) } }),
   hmisWeekLabel: (weekStart) =>
-    api.get('/reports/hmis/week-label', { params: { week_start: weekStart } }),
+    api.get('/reports/phem/week-label', { params: { week_start: weekStart } }),
  
   // ─── Exports ──────────────────────────────────────────────
   // Fetched as authenticated blobs (the shared `api` instance already
@@ -188,12 +196,12 @@ export const reportsApi = {
       responseType: 'blob',
     }),
   hmisExportWeeklyExcel: (weekStart, facilityId) =>
-    api.get('/reports/hmis/export/weekly/excel', {
+    api.get('/reports/phem/export/weekly/excel', {
       params: { week_start: weekStart, ...(facilityId ? { facility_id: facilityId } : {}) },
       responseType: 'blob',
     }),
   hmisExportWeeklyHtml: (weekStart, facilityId) =>
-    api.get('/reports/hmis/export/weekly/html', {
+    api.get('/reports/phem/export/weekly/html', {
       params: { week_start: weekStart, ...(facilityId ? { facility_id: facilityId } : {}) },
       responseType: 'blob',
     }),
@@ -206,6 +214,7 @@ export const adminApi = {
   users:          ()     => api.get('/admin/users'),
   createUser:     (data) => api.post('/admin/users', data),
   deactivateUser: (id, reason) => api.delete(`/admin/users/${id}`, { params: { reason } }),
+  resetPassword:  (data) => api.post('/admin/users/reset-password', data),
 
   // Reportable Indicator Definitions CRUD
   listIndicators:   (params) => api.get('/admin/indicator-definitions', { params }),
@@ -216,4 +225,8 @@ export const adminApi = {
   
   // Lab test types lookup
   labTestTypes:     () => api.get('/admin/lab-test-types'),
+
+  // Facility Settings
+  getFacilitySettings:    () => api.get('/admin/facility-settings'),
+  updateFacilitySettings: (data) => api.put('/admin/facility-settings', data),
 }

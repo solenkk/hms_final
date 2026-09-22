@@ -102,3 +102,12 @@
     gap: 1rem;
   }
 }
+
+.hover-bg-subtle:hover {
+  background-color: var(--bg-subtle);
+}
+
+.gov-reporting-panel {
+  display: flex;
+  flex-direction: column;
+}

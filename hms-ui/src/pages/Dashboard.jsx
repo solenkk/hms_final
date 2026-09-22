@@ -7,7 +7,8 @@ import {
 } from 'recharts'
 import {
   Users, Stethoscope, BedDouble, DollarSign,
-  FlaskConical, Pill, AlertTriangle, TrendingUp, Clock
+  FlaskConical, Pill, AlertTriangle, TrendingUp, Clock,
+  Droplets, Microscope, CheckCircle2, Activity
 } from 'lucide-react'
 import './Dashboard.css'
 
@@ -57,28 +58,84 @@ export default function Dashboard() {
     // Lab Technician: only their relevant data
     if (role === 'lab_technician') {
       return (
-        <div className="stats-grid">
-          <StatCard
-            icon={<FlaskConical size={20} />}
-            iconBg="hsl(270,65%,58%)"
-            label="Pending Labs"
-            value={alerts.pending_lab_orders ?? 0}
-            sub="awaiting collection or result"
-            color="hsl(270,65%,58%)"
-            onClick={() => navigate('/lab')}
-            clickable
-          />
-          <StatCard
-            icon={<Clock size={20} />}
-            iconBg="hsl(210,80%,55%)"
-            label="Tests Sent Today"
-            value={alerts.pending_lab_orders ?? 0}
-            sub="tap to view queue"
-            color="hsl(210,80%,55%)"
-            onClick={() => navigate('/lab')}
-            clickable
-          />
-        </div>
+        <>
+          <div className="stats-grid">
+            <StatCard
+              icon={<Droplets size={20} />}
+              iconBg="hsl(210,80%,55%)"
+              label="Awaiting Collection"
+              value={alerts.lab_awaiting_collection ?? 0}
+              sub="patients waiting for draw"
+              color="hsl(210,80%,55%)"
+              onClick={() => navigate('/lab')}
+              clickable
+            />
+            <StatCard
+              icon={<Microscope size={20} />}
+              iconBg="hsl(270,65%,58%)"
+              label="Awaiting Analysis"
+              value={alerts.lab_awaiting_analysis ?? 0}
+              sub="samples ready to run"
+              color="hsl(270,65%,58%)"
+              onClick={() => navigate('/lab')}
+              clickable
+            />
+            <StatCard
+              icon={<CheckCircle2 size={20} />}
+              iconBg="hsl(150,65%,45%)"
+              label="Completed Today"
+              value={alerts.lab_completed_today ?? 0}
+              sub="tests finalized"
+              color="hsl(150,65%,45%)"
+            />
+            <StatCard
+              icon={<Activity size={20} />}
+              iconBg="hsl(0,75%,58%)"
+              label="Abnormal Results"
+              value={alerts.lab_abnormal_today ?? 0}
+              sub="requires doctor review"
+              color={alerts.lab_abnormal_today > 0 ? "var(--color-danger)" : "var(--text-muted)"}
+              onClick={() => alerts.lab_abnormal_today > 0 ? navigate('/lab') : null}
+              clickable={alerts.lab_abnormal_today > 0}
+            />
+          </div>
+
+          <div className="dashboard-charts" style={{ marginTop: '1.5rem', display: 'block' }}>
+            <div className="card">
+              <div className="card-header">
+                <h3>Recent Completed Tests</h3>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Patient</th>
+                      <th>Test Name</th>
+                      <th>Completed Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alerts.recent_labs && alerts.recent_labs.length > 0 ? (
+                      alerts.recent_labs.map(lab => (
+                        <tr key={lab.id}>
+                          <td>{lab.patient_name}</td>
+                          <td><span className="badge badge-gray">{lab.test_name}</span></td>
+                          <td>{new Date(lab.resulted_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                          No tests completed yet today.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>
       )
     }
 
@@ -169,18 +226,7 @@ export default function Dashboard() {
           sub={`${beds.available ?? 0} available`}
           color="var(--color-accent)"
         />
-        <StatCard
-          icon={<DollarSign size={20} />}
-          iconBg="hsl(38,95%,55%)"
-          label="Revenue (ETB)"
-          value={
-            typeof summary?.revenue_etb === 'object'
-              ? ((period === 'today' ? summary?.revenue_etb?.today : summary?.revenue_etb?.this_month) ?? 0).toLocaleString()
-              : (summary?.revenue_etb ?? 0).toLocaleString()
-          }
-          sub={`${period} total`}
-          color="hsl(38,95%,55%)"
-        />
+
         <StatCard
           icon={<FlaskConical size={20} />}
           iconBg="hsl(270,65%,58%)"

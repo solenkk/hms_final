@@ -275,7 +275,13 @@ export default function Patients() {
           patient={openVisitPatient}
           doctor={user}
           onClose={() => setOpenVisitPatient(null)}
-          onSaved={() => { setOpenVisitPatient(null); load() }}
+          onSaved={() => { 
+            setOpenVisitPatient(null); 
+            load();
+            if (['doctor', 'admin'].includes(user?.role) || user?.role?.name === 'doctor') {
+              navigate(`/patients/${openVisitPatient.id}`);
+            }
+          }}
         />
       )}
     </div>
@@ -379,11 +385,12 @@ function PatientRegisterModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     first_name_en: '', last_name_en: '',
     first_name_am: '', last_name_am: '',
-    date_of_birth: '', gender: 'male',
+    date_of_birth: '', age: '', gender: 'male',
     phone: '', email: '',
     address_en: '', blood_type: '',
     consent_given: true,
   })
+  const [ageMode, setAgeMode] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const handle = e => setForm(f => ({ ...f, [e.target.name]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -393,15 +400,22 @@ function PatientRegisterModal({ onClose, onSaved }) {
     const required = {
       first_name_en: 'First Name (English)',
       last_name_en: 'Last Name (English)',
-      date_of_birth: 'Date of Birth',
-      phone: 'Phone',
     }
     for (const [key, label] of Object.entries(required)) {
       if (!form[key]?.trim()) { toast.error(`${label} is required`); return }
     }
+    
+    if (ageMode) {
+      if (!form.age?.trim()) { toast.error(`Age is required`); return }
+      const birthYear = new Date().getFullYear() - parseInt(form.age)
+      form.date_of_birth = `${birthYear}-01-01`
+    } else {
+      if (!form.date_of_birth?.trim()) { toast.error(`Date of Birth is required`); return }
+    }
+
     setSaving(true)
     try {
-      const payload = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ''))
+      const payload = Object.fromEntries(Object.entries(form).filter(([k, v]) => v !== '' && k !== 'age'))
       await patientsApi.create(payload)
       toast.success('Patient registered successfully')
       onSaved()
@@ -450,8 +464,17 @@ function PatientRegisterModal({ onClose, onSaved }) {
               <input className="form-input" name="last_name_am" value={form.last_name_am} onChange={handle} />
             </div>
             <div className="form-group">
-              <label className="form-label">Date of Birth *</label>
-              <input className="form-input" type="date" name="date_of_birth" value={form.date_of_birth} onChange={handle} required />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label">{ageMode ? 'Age (Years) *' : 'Date of Birth *'}</label>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0 0.25rem', fontSize: '0.75rem', height: 'auto' }} onClick={() => setAgeMode(!ageMode)}>
+                  {ageMode ? 'Use Calendar (<1 yr)' : 'Enter Age Instead'}
+                </button>
+              </div>
+              {ageMode ? (
+                <input className="form-input" type="number" min="1" max="150" name="age" value={form.age} onChange={handle} placeholder="e.g. 35" required />
+              ) : (
+                <input className="form-input" type="date" name="date_of_birth" value={form.date_of_birth} onChange={handle} required />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Gender *</label>

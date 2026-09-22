@@ -8,12 +8,23 @@ import './Visits.css'
 
 const STATUS_COLORS = { open: 'badge-green', closed: 'badge-gray', pending: 'badge-orange' }
 
+const EC_MONTH_NAMES = [
+  "", "Meskerem", "Tikimt", "Hidar", "Tahsas", "Tir", "Yekatit",
+  "Megabit", "Miyazya", "Ginbot", "Sene", "Hamle", "Nehase", "Pagume"
+]
+
+const today = new Date();
+const currentECYear = today.getFullYear() - 8 + (today.getMonth() > 8 || (today.getMonth() === 8 && today.getDate() >= 11) ? 1 : 0);
+
 export default function Visits() {
   const [visits, setVisits]   = useState([])
   const [queue, setQueue]     = useState([])
   const [loading, setLoading] = useState(true)
   const [queueLoading, setQueueLoading] = useState(true)
   const [status, setStatus]   = useState('open')
+  const [ecYear, setEcYear]   = useState('')
+  const [ecMonth, setEcMonth] = useState('')
+  const [ecDay, setEcDay]     = useState('')
   const [openVisitPatient, setOpenVisitPatient] = useState(null)
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -25,11 +36,15 @@ export default function Visits() {
   const loadVisits = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await visitsApi.list({ status, limit: 50 })
+      const params = { status, limit: 50 }
+      if (status === 'closed' && ecYear && ecMonth && ecDay) {
+        params.ec_date = `${ecYear}-${String(ecMonth).padStart(2, '0')}-${String(ecDay).padStart(2, '0')}`
+      }
+      const res = await visitsApi.list(params)
       setVisits(res.data.items ?? res.data)
     } catch { toast.error('Failed to load visits') }
     finally { setLoading(false) }
-  }, [status])
+  }, [status, ecYear, ecMonth, ecDay])
 
   const loadQueue = useCallback(async () => {
     setQueueLoading(true)
@@ -133,7 +148,7 @@ export default function Visits() {
       </div>
 
       {/* ── Open / Closed visit filter ──────────────────────────────── */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div className="tabs">
           {['open','closed'].map(s => (
             <button key={s} className={`tab-btn ${status === s ? 'active' : ''}`} onClick={() => setStatus(s)}>
@@ -141,6 +156,41 @@ export default function Visits() {
             </button>
           ))}
         </div>
+        
+        {status === 'closed' && (
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
+            <span style={{ fontSize:'0.8rem', color:'var(--text-secondary)' }}>Filter by Date (EC):</span>
+            <select className="form-select" style={{ width: '80px', padding:'0.25rem 0.5rem', fontSize:'0.85rem' }} value={ecYear} onChange={e => setEcYear(e.target.value)}>
+              <option value="">Year</option>
+              {Array.from({ length: 10 }, (_, i) => currentECYear - i).map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select className="form-select" style={{ width: '110px', padding:'0.25rem 0.5rem', fontSize:'0.85rem' }} value={ecMonth} onChange={e => {
+              setEcMonth(e.target.value);
+              if (e.target.value && !ecYear) setEcYear(currentECYear.toString());
+            }}>
+              <option value="">Month</option>
+              {EC_MONTH_NAMES.slice(1).map((name, i) => <option key={i+1} value={i+1}>{name}</option>)}
+            </select>
+            <select className="form-select" style={{ width: '70px', padding:'0.25rem 0.5rem', fontSize:'0.85rem' }} value={ecDay} onChange={e => {
+              setEcDay(e.target.value);
+              if (e.target.value && !ecYear) setEcYear(currentECYear.toString());
+              if (e.target.value && !ecMonth) setEcMonth('1');
+            }}>
+              <option value="">Day</option>
+              {Array.from({ length: 30 }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            {(ecYear || ecMonth || ecDay) && (
+              <>
+                {(!ecYear || !ecMonth || !ecDay) && (
+                  <span style={{ fontSize:'0.75rem', color:'var(--color-danger)', marginLeft:'0.5rem' }}>Select Year, Month, and Day to filter</span>
+                )}
+                <button className="btn btn-ghost btn-sm" style={{ padding:'0.25rem 0.5rem', fontSize:'0.8rem', marginLeft:'0.5rem' }} onClick={() => { setEcYear(''); setEcMonth(''); setEcDay(''); }}>
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -199,7 +249,14 @@ export default function Visits() {
           patient={openVisitPatient}
           doctor={user}
           onClose={() => setOpenVisitPatient(null)}
-          onSaved={() => { setOpenVisitPatient(null); loadVisits(); loadQueue() }}
+          onSaved={() => { 
+            setOpenVisitPatient(null); 
+            loadVisits(); 
+            loadQueue();
+            if (['doctor', 'admin'].includes(user?.role) || user?.role?.name === 'doctor') {
+              navigate(`/patients/${openVisitPatient.id}`);
+            }
+          }}
         />
       )}
     </div>
